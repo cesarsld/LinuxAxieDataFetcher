@@ -39,4 +39,22 @@ namespace AxieDataFetcher.Mongo
         }
 
     }
+
+    public class AuctionSaleData
+    {
+        public int id; //timestamp
+        public int tokenId;
+        public float price;
+        public string buyer;
+        public string seller;
+
+        public AuctionSaleData(int _id, int token, float _price, string _b, string _s)
+        {
+            id = _id;
+            tokenId = token;
+            price = _price;
+            buyer = _b;
+            seller = _s;
+        }
+    }
 }
