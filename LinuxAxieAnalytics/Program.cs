@@ -10,6 +10,7 @@ using AxieDataFetcher.BattleData;
 using AxieDataFetcher.MultiThreading;
 using System.Diagnostics;
 using Newtonsoft.Json;
+using AxieDataFetcher.Mongo;
 
 namespace AxieDataFetcher
 {
@@ -20,12 +21,12 @@ namespace AxieDataFetcher
             Console.WriteLine("Hello World!");
             //Console.WriteLine(give(23));
             //Console.ReadLine();
-            AxieDataGetter.FetchAllSalesData().GetAwaiter().GetResult();
-            //AxieDataGetter.FetchAllAuctionSales().GetAwaiter().GetResult();
+            //MarketplaceDatabase.ComputeAllSales().GetAwaiter().GetResult();
+            //AxieDataGetter.FetchAllSalesData().GetAwaiter().GetResult();
             //EggsSpawnDataFetcher.GetAllEggsSpawnedDataCumul().GetAwaiter().GetResult();
             //WinrateCollector.GetCumulBattleCount().GetAwaiter().GetResult();
             //inrateCollector.GetBattleDataSinceLastCheck().GetAwaiter().GetResult();
-            //LoopHandler.UpdateServiceCheckLoop().GetAwaiter().GetResult();
+            LoopHandler.UpdateServiceCheckLoop().GetAwaiter().GetResult();
             //444542
             //AxieDataGetter.FetchCumulUniqueBuyers().GetAwaiter().GetResult();
             //AxieDataGetter.TestBid().GetAwaiter().GetResult();

@@ -354,7 +354,7 @@ namespace AxieDataFetcher.BlockchainFetcher
 
         public static async Task FetchAllSalesData()
         {
-            var web3 = new Web3("https://mainnet.infura.io");
+            var web3 = new Web3("https://mainnet.infura.io/v3/146c5ff4a83a4a62b8eb4bbc93e07974"); //mainnet.infura.io/v3/146c5ff4a83a4a62b8eb4bbc93e07974
             //get contracts
             var auctionContract = web3.Eth.GetContract(KeyGetter.GetABI("auctionABI"), AxieCoreContractAddress);
             var coreContract = web3.Eth.GetContract(KeyGetter.GetABI("coreABI"), AxieCoreContractAddress);
@@ -364,57 +364,52 @@ namespace AxieDataFetcher.BlockchainFetcher
 
             //get events
             var auctionSuccesfulEvent = auctionContract.GetEvent("AuctionSuccessful");
+            var auctionCreatedEvent = auctionContract.GetEvent("AuctionCreated");
 
             //set block range search
             //var lastBlock = await GetLastBlockCheckpoint(web3);
             //var firstBlock = new BlockParameter(new HexBigInteger(KeyGetter.GetLastCheckedBlock()));
-            object[] input1 = new object[2];
-            input1[0] = "0xf5b0a3efb8e8e4c201e2a935f110eaaf3ffecb8d";
-            input1[1] = new BigInteger(3021);
-            object[] input2 = new object[1];
-            input2[0] = new BigInteger(2247);
-            var tada = await ownerOfFunction.CallDeserializingToObjectAsync<OwnerOf>(new BlockParameter(new HexBigInteger(new BigInteger(9351694))), input2);
-            var sellerInfo1 = await getSellerInfoFunction.CallDeserializingToObjectAsync<SellerInfo>(
-                                new BlockParameter(new HexBigInteger(new BigInteger(9351694))), input1);
-            //await getSellerInfoFunction.CallAsync<SellerInfo>()
-            Console.WriteLine("Hi!");
-            return;
+
             //prepare filters 
             //var auctionFilterAll = auctionSuccesfulEvent.CreateFilterInput(firstBlock, lastBlock);
             //get logs from blockchain
             //var auctionLogs = await auctionSuccesfulEvent.GetAllChanges<AuctionSuccessfulEvent>(auctionFilterAll);
-            BigInteger first = 9051317; //6727713
-            BigInteger last = 9351317;
+            BigInteger first = 5316433; //6727713
+            BigInteger last = 9353195; // 5316433
             BigInteger current = first;
-            var initialTime = await GetBlockTimeStamp(first, web3);
             var auctionList = new List<AuctionSaleData>();
+            var auctionCreateList = new List<AuctionCreationData>();
             while (current < last)
             {
-                var latest = current + 25000;
+                var latest = current + 10000;
                 if (latest > last)
                     latest = last;
+                Console.WriteLine($"Scanning blocks {current}-{latest}");
                 var auctionFilterAll = auctionSuccesfulEvent.CreateFilterInput(new BlockParameter(new HexBigInteger(current)), new BlockParameter(new HexBigInteger(latest)));
                 var auctionLogs = await auctionSuccesfulEvent.GetAllChanges<AuctionSuccessfulEvent>(auctionFilterAll);
+                var auctionCreationFilterAll = auctionCreatedEvent.CreateFilterInput(new BlockParameter(new HexBigInteger(current)), new BlockParameter(new HexBigInteger(latest)));
+                var creationLogs = await auctionCreatedEvent.GetAllChanges<AuctionCreatedEvent>(auctionCreationFilterAll);
                 foreach (var log in auctionLogs)
                 {
                     float price = Convert.ToSingle(Nethereum.Util.UnitConversion.Convert.FromWei(log.Event.totalPrice).ToString());
                     int token = Convert.ToInt32(log.Event.tokenId.ToString());
-                    int time = await GetBlockTimeStamp(log.Log.BlockNumber.Value, web3);
-                    object[] input = new object[2];
-                    input[0] = NftAddress;
-                    input[1] = log.Event.tokenId;
-                    Console.WriteLine($"Token is {token}");
-                    var sellerInfo = await getSellerInfoFunction.CallDeserializingToObjectAsync<SellerInfo>(
-                                new BlockParameter(new HexBigInteger(log.Log.BlockNumber.Value)), input);
-                    Console.ReadLine();
-                    auctionList.Add(new AuctionSaleData(time, token, price, log.Event.winner, sellerInfo.seller));
+                    auctionList.Add(new AuctionSaleData(token, price, log.Event.winner, Convert.ToUInt64(log.Log.BlockNumber.Value.ToString())));
+                }
+                foreach (var log in creationLogs)
+                {
+                    int token = Convert.ToInt32(log.Event.tokenId.ToString());
+                    auctionCreateList.Add(new AuctionCreationData(token, log.Event.seller, Convert.ToUInt64(log.Log.BlockNumber.Value.ToString())));
                 }
                 DatabaseConnection.SetupConnection("AxieAuctionData");
                 var auctionCollec = DatabaseConnection.GetDb().GetCollection<AuctionSaleData>("AuctionSales");
-                await auctionCollec.InsertManyAsync(auctionList);
+                var auctionCreateCollec = DatabaseConnection.GetDb().GetCollection<AuctionCreationData>("AuctionCreations");
+                if (auctionList.Count > 0)
+                    await auctionCollec.InsertManyAsync(auctionList);
+                if (auctionCreateList.Count > 0)
+                    await auctionCreateCollec.InsertManyAsync(auctionCreateList);
                 auctionList.Clear();
+                auctionCreateList.Clear();
                 current = latest;
-                break;
             }
             Console.WriteLine("Done!");
 
