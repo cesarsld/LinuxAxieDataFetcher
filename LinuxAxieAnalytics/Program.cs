@@ -22,6 +22,7 @@ namespace AxieDataFetcher
             //Console.WriteLine(give(23));
             //Console.ReadLine();
             //MarketplaceDatabase.ComputeAllSales().GetAwaiter().GetResult();
+            //AxieDataGetter.FetchOpenSeaData().GetAwaiter().GetResult();
             //AxieDataGetter.FetchAllSalesData().GetAwaiter().GetResult();
             //EggsSpawnDataFetcher.GetAllEggsSpawnedDataCumul().GetAwaiter().GetResult();
             //WinrateCollector.GetCumulBattleCount().GetAwaiter().GetResult();

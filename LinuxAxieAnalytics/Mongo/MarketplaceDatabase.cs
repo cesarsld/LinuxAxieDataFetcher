@@ -43,19 +43,27 @@ namespace AxieDataFetcher.Mongo
         public static async Task ComputeAllSales()
         {
             DatabaseConnection.SetupConnection("AxieAuctionData");
+            var checkCollec = DatabaseConnection.GetDb().GetCollection<Checkpoint>("Checkpoints");
+            var checkpoint = (await checkCollec.FindAsync(c => c.id == 1)).FirstOrDefault();
             var auctionCollec = DatabaseConnection.GetDb().GetCollection<AuctionSaleData>("AuctionSales");
             var auctionCreateCollec = DatabaseConnection.GetDb().GetCollection<AuctionCreationData>("AuctionCreations");
-            var auctionList = await (await auctionCollec.FindAsync(x => true)).ToListAsync();
+            var auctionList = await (await auctionCollec.FindAsync(x => x.block > (ulong)checkpoint.lastBlockReviewed)).ToListAsync();
             var auctionCreateList = await(await auctionCreateCollec.FindAsync(x => true)).ToListAsync();
-            Console.WriteLine("Hi!");
-            var addList = new List<Address>();
+            var addressCollec = DatabaseConnection.GetDb().GetCollection<Address>("SaleRegistry");
+            var addList = await (await addressCollec.FindAsync(a => true)).ToListAsync();
+            Console.WriteLine($"list count is {addList.Count}");
+            var updateList = new List<string>();
             foreach (var sale in auctionList)
             {
+                if (!updateList.Contains(sale.buyer))
+                    updateList.Add(sale.buyer);
                 if (addList.FirstOrDefault(x => x.id == sale.buyer.ToLower()) == null)
                     addList.Add(new Address(sale.buyer.ToLower()));
                 var sellerId = auctionCreateList.Where(a => a.block < sale.block && a.tokenId == sale.tokenId)
                                                 .OrderBy(a => a.block)
                                                 .Last().seller.ToLower();
+                if (!updateList.Contains(sellerId))
+                    updateList.Add(sellerId);
                 if (addList.FirstOrDefault(x => x.id == sellerId) == null)
                     addList.Add(new Address(sellerId));
                 var buyer = addList.FirstOrDefault(x => x.id == sale.buyer.ToLower());
@@ -65,21 +73,24 @@ namespace AxieDataFetcher.Mongo
                 seller.soldCount++;
                 seller.sold += sale.price;
             }
-            var addressCollec = DatabaseConnection.GetDb().GetCollection<Address>("SaleRegistry");
-            await addressCollec.InsertManyAsync(addList);
+            foreach (var add in updateList)
+                await addressCollec.FindOneAndReplaceAsync(a => a.id == add, addList.FirstOrDefault(a => a.id == add));
+            checkpoint.lastBlockReviewed = checkpoint.lastBlockChecked;
+            await checkCollec.FindOneAndReplaceAsync(c => c.id == 1, checkpoint);
         }
     }
 
     public class AuctionSaleData
     {
-        public ObjectId _id;
+        public long id;
         public int tokenId;
         public float price;
         public string buyer;
         public ulong block;
 
-        public AuctionSaleData(int token, float _price, string _b, ulong _bl)
+        public AuctionSaleData(long _id, int token, float _price, string _b, ulong _bl)
         {
+            id = _id;
             tokenId = token;
             price = _price;
             buyer = _b;
@@ -87,18 +98,54 @@ namespace AxieDataFetcher.Mongo
         }
     }
 
+    public class OpenseaSaleData
+    {
+        public int tokenId;
+        public float price;
+        public string buyer;
+        public string seller;
+        public ulong block;
+
+        public OpenseaSaleData(int token, float _price, string _b, string _s, ulong _bl)
+        {
+            tokenId = token;
+            price = _price;
+            buyer = _b;
+            seller = _s;
+            block = _bl;
+        }
+    }
+
     public class AuctionCreationData
     {
-        public ObjectId _id;
+        public long id;
         public int tokenId;
         public string seller;
         public ulong block;
 
-        public AuctionCreationData(int token, string _s, ulong _bl)
+        public AuctionCreationData(long _id, int token, string _s, ulong _bl)
         {
+            id = _id;
             tokenId = token;
             seller = _s;
             block = _bl;
+        }
+    }
+
+    public class Checkpoint
+    {
+        public int id;
+        public int lastBlockChecked;
+        public int lastBlockReviewed;
+        public long totalCreations;
+        public long totalSuccess;
+        public Checkpoint(int _id, int _lastBlockChecked, int _lastBlockReviewed, long _totalCreations, long _totalSuccess)
+        {
+            id = _id;
+            lastBlockChecked = _lastBlockChecked;
+            lastBlockReviewed = _lastBlockReviewed;
+            totalCreations = _totalCreations;
+            totalSuccess = _totalSuccess;
         }
     }
 

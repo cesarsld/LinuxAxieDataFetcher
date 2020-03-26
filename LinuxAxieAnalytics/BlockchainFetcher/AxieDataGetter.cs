@@ -16,6 +16,8 @@ using Nethereum.Util;
 using Nethereum.Web3.Accounts;
 using Nethereum.Contracts.CQS;
 using Newtonsoft.Json;
+using MongoDB.Driver;
+using MongoDB.Bson;
 //using Nethereum.Contracts.Extensions;
 using System.Linq;
 using AxieDataFetcher.Core;
@@ -28,6 +30,7 @@ namespace AxieDataFetcher.BlockchainFetcher
 
         #region ABI & contract declaration
 
+        private static string OpenSeaContractAddress = "0x7be8076f4ea4a4ad08075c2508e481d6c946d12b";
         private static string AxieCoreContractAddress = "0xF4985070Ce32b6B1994329DF787D1aCc9a2dd9e2";
         private static string NftAddress = "0xf5b0a3efb8e8e4c201e2a935f110eaaf3ffecb8d";
         private static string AxieLabContractAddress = "0x99ff9f4257D5b6aF1400C994174EbB56336BB79F";
@@ -104,7 +107,7 @@ namespace AxieDataFetcher.BlockchainFetcher
 
         public static async Task FetchAuctionData()
         {
-            var web3 = new Web3("https://mainnet.infura.io");
+            var web3 = new Web3("https://mainnet.infura.io/v3/146c5ff4a83a4a62b8eb4bbc93e07974");
             //get contracts
             var auctionContract = web3.Eth.GetContract(KeyGetter.GetABI("auctionABI"), AxieCoreContractAddress);
 
@@ -174,7 +177,7 @@ namespace AxieDataFetcher.BlockchainFetcher
             }
         }
 
-
+        //daily function
         public static async Task FetchLogsSinceLastCheck()
         {
             Console.WriteLine("Pods per day init");
@@ -352,6 +355,51 @@ namespace AxieDataFetcher.BlockchainFetcher
             Console.WriteLine("Pods sync done.");
         }
 
+        public static async Task FetchOpenSeaData()
+        {
+            var web3 = new Web3("https://mainnet.infura.io/v3/146c5ff4a83a4a62b8eb4bbc93e07974");
+
+            var openSeaContract = web3.Eth.GetContract(KeyGetter.GetABI("openseaABI"), OpenSeaContractAddress);
+            var nftCorecontract = web3.Eth.GetContract(KeyGetter.GetABI("coreABI"), NftAddress);
+
+            var orderMatched = openSeaContract.GetEvent("OrdersMatched");
+            var transferEvent = nftCorecontract.GetEvent("Transfer");
+
+            var auctionList = new List<OpenseaSaleData>();
+
+            BigInteger first = 5774644; //6727713 5774644
+            BigInteger last = 9372748; // 9372748
+            BigInteger current = first;
+            while (current < last)
+            {
+                var latest = current + 20000;
+                if (latest > last)
+                    latest = last;
+                Console.WriteLine($"Scanning blocks {current}-{latest}");
+                var auctionFilter = orderMatched.CreateFilterInput(new BlockParameter(new HexBigInteger(current)), new BlockParameter(new HexBigInteger(latest)));
+                var trasnferFilter = transferEvent.CreateFilterInput(new BlockParameter(new HexBigInteger(current)), new BlockParameter(new HexBigInteger(latest)));
+                var logs = await orderMatched.GetAllChanges<OrdersMatchedEvent>(auctionFilter);
+                var transferLogs = await transferEvent.GetAllChanges<TransferEvent>(trasnferFilter);
+                foreach (var log in logs)
+                {
+                    var transfer = transferLogs.FirstOrDefault(l => l.Log.TransactionHash == log.Log.TransactionHash);
+                    if (transfer != null)
+                    {
+                        float price = Convert.ToSingle(Nethereum.Util.UnitConversion.Convert.FromWei(log.Event.price).ToString());
+                        int token = Convert.ToInt32(transfer.Event.tokenId.ToString());
+                        auctionList.Add(new OpenseaSaleData(token, price, log.Event.taker, log.Event.maker, Convert.ToUInt64(log.Log.BlockNumber.Value.ToString())));
+                    }
+                }
+                DatabaseConnection.SetupConnection("AxieAuctionData");
+                var auctionCollec = DatabaseConnection.GetDb().GetCollection<OpenseaSaleData>("OpenseaSales");
+                if (auctionList.Count > 0)
+                    await auctionCollec.InsertManyAsync(auctionList);
+                auctionList.Clear();
+                current = latest;
+            }
+        }
+
+        //all transactions
         public static async Task FetchAllSalesData()
         {
             var web3 = new Web3("https://mainnet.infura.io/v3/146c5ff4a83a4a62b8eb4bbc93e07974"); //mainnet.infura.io/v3/146c5ff4a83a4a62b8eb4bbc93e07974
@@ -374,8 +422,11 @@ namespace AxieDataFetcher.BlockchainFetcher
             //var auctionFilterAll = auctionSuccesfulEvent.CreateFilterInput(firstBlock, lastBlock);
             //get logs from blockchain
             //var auctionLogs = await auctionSuccesfulEvent.GetAllChanges<AuctionSuccessfulEvent>(auctionFilterAll);
-            BigInteger first = 5316433; //6727713
-            BigInteger last = 9353195; // 5316433
+            DatabaseConnection.SetupConnection("AxieAuctionData");
+            var checkCollec = DatabaseConnection.GetDb().GetCollection<Checkpoint>("Checkpoints");
+            var checkpoint = (await checkCollec.FindAsync(c => c.id == 1)).FirstOrDefault();
+            BigInteger first = new BigInteger(checkpoint.lastBlockChecked); //
+            BigInteger last = (await  GetLastBlockCheckpoint(web3)).BlockNumber.Value; //
             BigInteger current = first;
             var auctionList = new List<AuctionSaleData>();
             var auctionCreateList = new List<AuctionCreationData>();
@@ -393,14 +444,15 @@ namespace AxieDataFetcher.BlockchainFetcher
                 {
                     float price = Convert.ToSingle(Nethereum.Util.UnitConversion.Convert.FromWei(log.Event.totalPrice).ToString());
                     int token = Convert.ToInt32(log.Event.tokenId.ToString());
-                    auctionList.Add(new AuctionSaleData(token, price, log.Event.winner, Convert.ToUInt64(log.Log.BlockNumber.Value.ToString())));
+                    auctionList.Add(new AuctionSaleData(checkpoint.totalSuccess, token, price, log.Event.winner, Convert.ToUInt64(log.Log.BlockNumber.Value.ToString())));
+                    checkpoint.totalSuccess++;
                 }
                 foreach (var log in creationLogs)
                 {
                     int token = Convert.ToInt32(log.Event.tokenId.ToString());
-                    auctionCreateList.Add(new AuctionCreationData(token, log.Event.seller, Convert.ToUInt64(log.Log.BlockNumber.Value.ToString())));
+                    auctionCreateList.Add(new AuctionCreationData(checkpoint.totalCreations, token, log.Event.seller, Convert.ToUInt64(log.Log.BlockNumber.Value.ToString())));
+                    checkpoint.totalCreations++;
                 }
-                DatabaseConnection.SetupConnection("AxieAuctionData");
                 var auctionCollec = DatabaseConnection.GetDb().GetCollection<AuctionSaleData>("AuctionSales");
                 var auctionCreateCollec = DatabaseConnection.GetDb().GetCollection<AuctionCreationData>("AuctionCreations");
                 if (auctionList.Count > 0)
@@ -411,6 +463,8 @@ namespace AxieDataFetcher.BlockchainFetcher
                 auctionCreateList.Clear();
                 current = latest;
             }
+            checkpoint.lastBlockChecked = Convert.ToInt32(last.ToString());
+            await checkCollec.FindOneAndReplaceAsync(c => c.id == 1, checkpoint);
             Console.WriteLine("Done!");
 
         }
@@ -715,6 +769,43 @@ namespace AxieDataFetcher.BlockchainFetcher
         public string seller { get; set; }
 
     }
+
+    [Event("OrdersMatched")]
+    public class OrdersMatchedEvent : IEventDTO
+    {
+        [Parameter("bytes32", "buyHash", 1)]
+        public string buyHash { get; set; }
+
+        [Parameter("bytes32", "sellHash", 2)]
+        public string sellHash { get; set; }
+
+        [Parameter("address", "maker", 3, true)]
+        public string maker { get; set; }
+
+        [Parameter("address", "taker", 4, true)]
+        public string taker { get; set; }
+
+        [Parameter("uint256", "price", 5)]
+        public BigInteger price { get; set; }
+
+        [Parameter("bytes32", "metadata", 6, true)]
+        public string metadata { get; set; }
+
+    }
+
+    [Event("Transfer")]
+    public class TransferEvent : IEventDTO
+    {
+        [Parameter("address", "_from", 1, true)]
+        public string from { get; set; }
+
+        [Parameter("address", "_to", 2, true)]
+        public string to { get; set; }
+
+        [Parameter("uint256", "_tokenId", 3)]
+        public BigInteger tokenId { get; set; }
+    }
+
     [Event("AuctionCancelled")]
     public class AuctionCancelledEvent : IEventDTO
     {

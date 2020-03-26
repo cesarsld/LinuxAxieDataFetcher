@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using AxieDataFetcher.BattleData;
 using AxieDataFetcher.EggsSpawnedData;
 using AxieDataFetcher.BlockchainFetcher;
+using AxieDataFetcher.Mongo;
 
 namespace AxieDataFetcher.Core
 {
@@ -32,7 +33,8 @@ namespace AxieDataFetcher.Core
                     }
                     //rework long term
                     //await EggsSpawnDataFetcher.GetEggsSpawnedFromCheckpoint();
-                    await AxieDataGetter.FetchLogsSinceLastCheck();
+                    await AxieDataGetter.FetchAllSalesData();
+                    await MarketplaceDatabase.ComputeAllSales();
                     // obsolete
                     //await WinrateCollector.GetBattlesFromRange();
                 }
