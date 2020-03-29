@@ -26,17 +26,17 @@ namespace AxieDataFetcher.Core
                 Console.WriteLine($"Time before next update :  {86400 - (unixTime - lastUnixTimeCheck)} seconds");
                 if (unixTime - lastUnixTimeCheck >= unixTimeBetweenUpdates)
                 {
-                    lastUnixTimeCheck = unixTime;
-                    using (var tw = new StreamWriter("AxieData/LastTimeCheck.txt"))
-                    {
-                        tw.Write(lastUnixTimeCheck.ToString());
-                    }
                     //rework long term
                     //await EggsSpawnDataFetcher.GetEggsSpawnedFromCheckpoint();
                     await AxieDataGetter.FetchAllSalesData();
                     await MarketplaceDatabase.ComputeAllSales();
                     // obsolete
                     //await WinrateCollector.GetBattlesFromRange();
+                    lastUnixTimeCheck = unixTime;
+                    using (var tw = new StreamWriter("AxieData/LastTimeCheck.txt"))
+                    {
+                        tw.Write(lastUnixTimeCheck.ToString());
+                    }
                 }
 
                 await Task.Delay(60000);
