@@ -53,19 +53,26 @@ namespace AxieDataFetcher.Mongo
             var addList = await (await addressCollec.FindAsync(a => true)).ToListAsync();
             Console.WriteLine($"list count is {addList.Count}");
             var updateList = new List<string>();
+            var newList = new List<string>();
             foreach (var sale in auctionList)
             {
-                if (!updateList.Contains(sale.buyer))
-                    updateList.Add(sale.buyer);
                 if (addList.FirstOrDefault(x => x.id == sale.buyer.ToLower()) == null)
+                {
+                    newList.Add(sale.buyer);
                     addList.Add(new Address(sale.buyer.ToLower()));
+                }
+                else if (!updateList.Contains(sale.buyer) && !newList.Contains(sale.buyer))
+                    updateList.Add(sale.buyer);
                 var sellerId = auctionCreateList.Where(a => a.block < sale.block && a.tokenId == sale.tokenId)
                                                 .OrderBy(a => a.block)
                                                 .Last().seller.ToLower();
-                if (!updateList.Contains(sellerId))
-                    updateList.Add(sellerId);
                 if (addList.FirstOrDefault(x => x.id == sellerId) == null)
+                {
+                    newList.Add(sellerId);
                     addList.Add(new Address(sellerId));
+                }
+                else if (!updateList.Contains(sellerId) && !newList.Contains(sellerId))
+                    updateList.Add(sellerId);
                 var buyer = addList.FirstOrDefault(x => x.id == sale.buyer.ToLower());
                 var seller = addList.FirstOrDefault(x => x.id == sellerId);
                 buyer.boughtCount++;
@@ -75,6 +82,11 @@ namespace AxieDataFetcher.Mongo
             }
             foreach (var add in updateList)
                 await addressCollec.FindOneAndReplaceAsync(a => a.id == add, addList.FirstOrDefault(a => a.id == add));
+            foreach (var add in newList)
+            {
+                var member = addList.FirstOrDefault(m => m.id == add);
+                await addressCollec.InsertOneAsync(member);
+            }
             checkpoint.lastBlockReviewed = checkpoint.lastBlockChecked;
             await checkCollec.FindOneAndReplaceAsync(c => c.id == 1, checkpoint);
         }
